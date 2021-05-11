@@ -202,10 +202,15 @@ export class Terminal {
 
         const chars = [...text]
 
+        let endCapped = false
+
         for (let char of chars) {
             const wc = Terminal.unicode.wcwidth(char.codePointAt(0)!)
 
-            if (wc + offset > maxLength) break
+            if (wc + offset > maxLength) {
+                if (1 + offset <= maxLength) endCapped = true
+                break
+            }
 
             checked.push([
                 col + offset,
@@ -216,9 +221,9 @@ export class Terminal {
             offset = offset + wc
         }
 
-        const actualLength = offset
+        const actualLength = endCapped ? offset + 1 : offset
 
-        if (col + actualLength < 0) return 0
+        if (col + actualLength <= 0) return 0
 
         // double width head fix
         if (
