@@ -35,13 +35,27 @@ export enum Color {
 
 export class Attribute {
     
+    public readonly colorForeground: number = 0
+    public readonly colorBackground: number = 0
 
     protected constructor (
         public readonly colorForegroundMode: ColorMode = ColorMode.Default,
-        public readonly colorForeground: number = 0,
+        colorForeground: number = 0,
         public readonly colorBackgroundMode: ColorMode = ColorMode.Default,
-        public readonly colorBackground: number = 0
-    ) {}
+        colorBackground: number = 0
+    ) {
+        if (colorForegroundMode === ColorMode.Default || colorForegroundMode === ColorMode.Invalid) {
+            this.colorForeground = 0
+        } else {
+            this.colorForeground = colorForeground
+        }
+
+        if (colorBackgroundMode === ColorMode.Default || colorBackgroundMode === ColorMode.Invalid) {
+            this.colorBackground = 0
+        } else {
+            this.colorBackground = colorBackground
+        }
+    }
 
     with({
         colorForegroundMode,
