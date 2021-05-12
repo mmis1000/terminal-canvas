@@ -1,12 +1,18 @@
-import { Attribute, Color, ColorMode, Terminal } from "./terminal";
+import { Attribute, ColorMode, Buffer, Color } from "./terminal";
 
 if (!process.stdout.isTTY) {
     throw new Error('Not tty')
 }
 
+const border = 4
+const panelWidth = 16
+const gap = 2
+
 const tty = process.stdout as import('tty').WriteStream
 
-const term = new Terminal(tty.columns, tty.rows)
+const term = new Buffer(tty.columns, tty.rows)
+const scrollBuf = new Buffer(tty.columns + panelWidth + gap, tty.rows)
+
 
 async function main () {
     let index = 0
@@ -15,34 +21,58 @@ async function main () {
         process.stdout.write('\r\n'.repeat(tty.rows - 1), r)
     })
 
+    const attr = new Attribute()
+    attr.setBackground(ColorMode.Palette, Color.black)
+    scrollBuf.fill(0, 0, scrollBuf.height, scrollBuf.width, ' ', attr)
 
-    const border = 6
-
-    for (let row = border; row < term.height - border; row++) {
-        for (let col = border; col < term.width - border; col++) {
-            const cell = term.grid[row][col]
-            cell.attributes.setBackground(ColorMode.Palette, ~~(/*+index  row + */col / 4) % 16)
-            cell.attributes.setForeground(ColorMode.Palette, ~~(/*index + row + */col / 4 + 8) % 16)
-            cell.length = 1
-            cell.text = ' '//(~~(index /*+ row*/ + col) % 16).toString(16)
-        }
-    }
+    let offset = 0
 
     while (true) {
         const str = '中文測試, Test中文測試'
-        const strLength = Terminal.lengthOf(str)
+        const strLength = Buffer.lengthOf(str)
+
+        offset = (offset + 1) % (panelWidth + gap)
 
         const attr = new Attribute()
-        attr.setForeground(ColorMode.Palette, Color.black)
-        attr.setBackground(ColorMode.Palette, Color.red)
+        // attr.setForeground(ColorMode.Palette, Color.black)
+        // attr.setBackground(ColorMode.Palette, Color.red)
 
+
+        
         for (let i = 0; i < 2; i++) {
+            attr.setForeground(ColorMode.Palette, ~~(Math.random() * 8))
             attr.setBackground(ColorMode.Palette, ~~(Math.random() * 8 + 8))
 
-            const x = ~~((term.width + strLength) * Math.random()) - strLength
+            const x = ~~((panelWidth + strLength) * Math.random()) - strLength
+            // const x = term.width - border - 3
 
-            term.write(border + ~~(Math.random() * (term.height - border * 2)), x, '中文測試, Test中文測試', attr, border, term.width - border)
+            scrollBuf.write(
+                border + ~~(Math.random() * (scrollBuf.height - border * 2)), x,
+                '中文測試, Test中文測試', attr,
+                0, panelWidth
+            )
         }
+
+        const h = scrollBuf.height - border * 2
+
+        for (let i = 1; panelWidth + panelWidth * (i - 1) + gap * i < scrollBuf.width; i++) {
+            scrollBuf.draw(scrollBuf,
+                border, 0,
+                border, panelWidth + panelWidth * (i - 1) + gap * i,
+                h, panelWidth
+            )
+        }
+
+        term.draw(scrollBuf, 0, offset, 0, 0, term.height, term.width)
+
+
+        // const attr1 = new Attribute()
+        // attr1.setForeground(ColorMode.Palette, Color.black)
+        // attr1.setBackground(ColorMode.Palette, Color.blueBright)
+
+        // term.draw(term, border, border, border, border + 32, h, 32)
+        // term.fill(border, border + 64, h, 32, 'AAB中文', attr1)
+        // term.draw(term, border, border, border, border + 96, h, 32)
 
         const res = term.serialize()
 

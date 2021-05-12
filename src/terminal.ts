@@ -104,17 +104,19 @@ export class Slot {
     }
 }
 
-export class Terminal {
+export class Buffer {
     grid: Slot[][]
     static unicode = new UnicodeV11
+
+    nullFillCharacter = ''
 
     static lengthOf(str: string) {
         return [...str].map(c => this.unicode.wcwidth(c.codePointAt(0)!)).reduce<number>((a, b) => a + b, 0)
     }
 
     constructor (public width: number, public height: number) {
-        this.grid = new Array(height).fill('').map(
-            () => new Array(width).fill('').map(() => new Slot())
+        this.grid = new Array(height).fill(this.nullFillCharacter).map(
+            () => new Array(width).fill(this.nullFillCharacter).map(() => new Slot())
         )
     }
 
@@ -122,8 +124,8 @@ export class Terminal {
         this.width = width
         this.height = height
 
-        this.grid = new Array(height).fill('').map(
-            () => new Array(width).fill('').map(() => new Slot())
+        this.grid = new Array(height).fill(this.nullFillCharacter).map(
+            () => new Array(width).fill(this.nullFillCharacter).map(() => new Slot())
         )
     }
 
@@ -205,7 +207,7 @@ export class Terminal {
         let endCapped = false
 
         for (let char of chars) {
-            const wc = Terminal.unicode.wcwidth(char.codePointAt(0)!)
+            const wc = Buffer.unicode.wcwidth(char.codePointAt(0)!)
 
             if (wc + offset > maxLength) {
                 if (1 + offset <= maxLength) endCapped = true
@@ -231,9 +233,9 @@ export class Terminal {
             this.grid[row][realBoundStart].length === 0
         ) {
             this.grid[row][realBoundStart - 1].length = 1
-            this.grid[row][realBoundStart - 1].text = ''
+            this.grid[row][realBoundStart - 1].text = this.nullFillCharacter
             this.grid[row][realBoundStart].length = 1
-            this.grid[row][realBoundStart].text = ''
+            this.grid[row][realBoundStart].text = this.nullFillCharacter
         }
 
         // double width end fix
@@ -242,15 +244,15 @@ export class Terminal {
             this.grid[row][col + actualLength - 1].length === 2
         ) {
             this.grid[row][col + actualLength - 1].length = 1
-            this.grid[row][col + actualLength - 1].text = ''
+            this.grid[row][col + actualLength - 1].text = this.nullFillCharacter
             this.grid[row][col + actualLength].length = 1
-            this.grid[row][col + actualLength].text = ''
+            this.grid[row][col + actualLength].text = this.nullFillCharacter
         }
 
         // zoning
         for (let i = realBoundStart; i < col + actualLength; i++) {
             this.grid[row][i].length = 1
-            this.grid[row][i].text = ''
+            this.grid[row][i].text = ' '
             if (attr) {
                 this.grid[row][i].attributes = attr.clone()
             }
@@ -259,11 +261,11 @@ export class Terminal {
         //fill
         for (let item of checked) {
             if (item[0] < realBoundStart) {
-                if (item[0] + item[1] > realBoundStart) {
+                if (item[0] >= 0 && item[0] + item[1] > realBoundStart) {
                     this.grid[row][item[0]].length = 1
-                    this.grid[row][item[0]].text = ''
+                    this.grid[row][item[0]].text = this.nullFillCharacter
                     this.grid[row][item[0] + 1].length = 1
-                    this.grid[row][item[0] + 1].text = ''
+                    this.grid[row][item[0] + 1].text = this.nullFillCharacter
                 }
                 continue
             }
@@ -276,7 +278,7 @@ export class Terminal {
             if (item[1] === 2) {
                 this.grid[row][item[0]].text = item[2]
                 this.grid[row][item[0]].length = 2
-                this.grid[row][item[0] + 1].text = ''
+                this.grid[row][item[0] + 1].text = this.nullFillCharacter
                 this.grid[row][item[0] + 1].length = 0
             }
         }
@@ -297,7 +299,7 @@ export class Terminal {
         for (const [rowNum, row] of grid.entries()) {
             let nullCount = 0
             for (const [colNum, slot] of row.entries()) {
-                if (slot.text && slot.length !== Terminal.unicode.wcwidth(slot.text.codePointAt(0)!)) {
+                if (slot.text && slot.length !== Buffer.unicode.wcwidth(slot.text.codePointAt(0)!)) {
                     debugger
                 }
 
@@ -310,8 +312,8 @@ export class Terminal {
                 }
 
                 const styleDiff = slot.isNull() 
-                    ? Terminal.diffBgOnly(currentCursorStyle, slot.attributes)
-                    : Terminal.diffStyle(currentCursorStyle, slot.attributes)
+                    ? Buffer.diffBgOnly(currentCursorStyle, slot.attributes)
+                    : Buffer.diffStyle(currentCursorStyle, slot.attributes)
                 
                 if (styleDiff) {
                     // pad backgrounds
@@ -359,5 +361,122 @@ export class Terminal {
         }
 
         return output
+    }
+
+    styleAt(row: number, col: number) {
+        const cell = this.grid[row]?.[col]
+        if (cell === undefined) {
+            return null
+        }
+
+        if (cell.length === 0) {
+            return this.grid[row][col - 1].attributes.clone()
+        }
+
+        return cell.attributes.clone()
+    }
+
+    fill(dy: number, dx: number, h: number, w: number, text: string, attr?: Attribute) {
+        for (let r = 0; r < h; r++) {
+            const row = this.grid[r + dy]
+            if (row === undefined) continue
+
+            for (let c = 0; c < w; c++) {
+                const cell = row[c + dx]
+                if (cell === undefined) continue
+
+                if (cell.length === 0) {
+                    row[c + dx - 1].length = 1
+                    row[c + dx - 1].text = this.nullFillCharacter
+                }
+
+                if (cell.length === 2) {
+                    row[c + dx + 1].length = 1
+                    row[c + dx + 1].text = this.nullFillCharacter
+                }
+
+                cell.length = 1
+                cell.text = this.nullFillCharacter
+
+                if (attr !== undefined) {
+                    cell.attributes = attr.clone()
+                }
+            }
+        }
+
+        for (let r = dy; r < dy + h; r++) {
+            let pos = dx
+            while (pos < dx + w) {
+                const length = this.write(r, pos, text, attr, dx, dx + w)
+                pos = pos + length
+                if (length <= 0) {
+                    break
+                }
+            }
+        }
+    }
+
+    draw(buf: Buffer, sy: number, sx: number, dy: number, dx: number, h: number, w: number) {
+        if (buf === this &&
+            sy + h > dy && dy + h > sy &&
+            sx + w > dx && dx + w > sx
+        ) {
+            throw new Error('Source and target overlapped')
+        }
+
+        for (let r = 0; r < h; r++) {
+            const row = this.grid[r + dy]
+            if (row === undefined) continue
+
+            for (let c = 0; c < w; c++) {
+                const cell = row[c + dx]
+                if (cell === undefined) continue
+
+                if (cell.length === 0) {
+                    row[c + dx - 1].length = 1
+                    row[c + dx - 1].text = this.nullFillCharacter
+                }
+                if (cell.length === 2) {
+                    row[c + dx + 1].length = 1
+                    row[c + dx + 1].text = this.nullFillCharacter
+                }
+
+                cell.length = 1
+                cell.text = this.nullFillCharacter
+                
+                const newStyle = buf.styleAt(r + sy, c + sx)
+                if (newStyle !== null) {
+                    cell.attributes = newStyle
+                }
+            }
+        }
+
+        for (let r = 0; r < h; r++) {
+            for (let c = 0; c < w; c++) {
+                const from = buf.grid[r + sy]?.[c + sx]
+                const to = this.grid[r + dy]?.[c + dx]
+
+                if (from !== undefined && to !== undefined) {
+                    if (from.length === 0) continue
+                    if (
+                        from.length === 1 &&
+                        this.grid[r + dy]?.[c + dx] !== undefined
+                    ) {
+                        this.grid[r + dy][c + dx].length = 1
+                        this.grid[r + dy][c + dx].text = from.text
+                    }
+                    if (
+                        from.length === 2 && c + 1 < w &&
+                        this.grid[r + dy]?.[c + dx] !== undefined &&
+                        this.grid[r + dy]?.[c + dx + 1] !== undefined
+                    ) {
+                        this.grid[r + dy][c + dx].length = 2
+                        this.grid[r + dy][c + dx].text = from.text
+                        this.grid[r + dy][c + dx + 1].length = 0
+                        this.grid[r + dy][c + dx + 1].text = this.nullFillCharacter
+                    }
+                }
+            }
+        }
     }
 }
