@@ -34,11 +34,11 @@ export enum Color {
 }
 
 export class Attribute {
-    
+
     public readonly colorForeground: number = 0
     public readonly colorBackground: number = 0
 
-    protected constructor (
+    protected constructor(
         public readonly colorForegroundMode: ColorMode = ColorMode.Default,
         colorForeground: number = 0,
         public readonly colorBackgroundMode: ColorMode = ColorMode.Default,
@@ -113,18 +113,18 @@ export class Slot {
     /**
      * This slot didn't exist, it is a placeholder after cjk text
      */
-    isPlaceHolder () {
+    isPlaceHolder() {
         return this.length === 0
     }
 
     /**
      * This slot is a null cell
      */
-    isNull () {
+    isNull() {
         return this.text === ''
     }
 
-    clone () {
+    clone() {
         const slot = new Slot()
         slot.length = this.length
         slot.text = this.text
@@ -146,7 +146,7 @@ export class Buffer {
         return [...str].map(c => this.unicode.wcwidth(c.codePointAt(0)!)).reduce<number>((a, b) => a + b, 0)
     }
 
-    constructor (public width: number, public height: number) {
+    constructor(public width: number, public height: number) {
         this.grid = new Array(height).fill(this.nullFillCharacter).map(
             () => new Array(width).fill(this.nullFillCharacter).map(() => new Slot())
         )
@@ -185,9 +185,9 @@ export class Buffer {
 
     static diffStyle(prev: Attribute, next: Attribute): string {
         const bgChanged = prev.colorBackgroundMode !== next.colorBackgroundMode ||
-        prev.colorBackground !== next.colorBackground
+            prev.colorBackground !== next.colorBackground
         const fgChanged = prev.colorForegroundMode !== next.colorForegroundMode ||
-        prev.colorForeground !== next.colorForeground
+            prev.colorForeground !== next.colorForeground
 
         if (!bgChanged && !fgChanged) {
             return ''
@@ -230,7 +230,7 @@ export class Buffer {
         return `\x1b[${sgrSeq.join(';')}m`
     }
 
-    write (row: number, col: number, text: string, attr?: Attribute, boundStart = -Infinity, boundEnd = Infinity): number {
+    write(row: number, col: number, text: string, attr?: Attribute, boundStart = -Infinity, boundEnd = Infinity): number {
         if (row >= this.height) return 0
         if (col >= this.width) return 0
         if (attr ? !attr.isValid() : false) throw new Error('invalid color')
@@ -350,10 +350,10 @@ export class Buffer {
                     continue
                 }
 
-                const styleDiff = slot.isNull() 
+                const styleDiff = slot.isNull()
                     ? Buffer.diffBgOnly(currentCursorStyle, slot.attributes)
                     : Buffer.diffStyle(currentCursorStyle, slot.attributes)
-                
+
                 if (styleDiff) {
                     // pad backgrounds
                     if (nullCount > 0) {
@@ -487,7 +487,7 @@ export class Buffer {
 
                 cell.length = 1
                 cell.text = this.nullFillCharacter
-                
+
                 const newStyle = buf.styleAt(r + sy, c + sx)
                 if (newStyle !== null) {
                     cell.attributes = newStyle
@@ -522,5 +522,134 @@ export class Buffer {
                 }
             }
         }
+    }
+
+    diff(toBuf: Buffer, fromY: number, fromX: number, toY: number, toX: number, h: number, w: number): string {
+        let res = ''
+
+        let currentCursorStyle = Attribute.from({
+            colorBackgroundMode: ColorMode.Invalid,
+            colorForegroundMode: ColorMode.Invalid
+        })
+
+        let defaultSlot = new Slot()
+
+        for (let r = 0; r < h; r++) {
+            let skip = 0
+            let nullFill = 0
+
+            for (let c = 0; c < w; c++) {
+                let oldSlot: Slot = toBuf.grid[r + toY]?.[c + toX] || defaultSlot
+                let newSlot: Slot = this.grid[r + fromY]?.[c + fromX] || defaultSlot
+
+                if (c === 0) {
+                    if (oldSlot.length === 0) {
+                        const prev = oldSlot
+                        oldSlot = new Slot()
+                        oldSlot.text = this.nullFillCharacter
+                        oldSlot.attributes = prev.attributes.with({
+                            colorBackgroundMode: ColorMode.Invalid
+                        })
+                    }
+                    if (newSlot.length === 0) {
+                        const prev = newSlot
+                        newSlot = new Slot()
+                        newSlot.text = this.nullFillCharacter
+                        newSlot.attributes = prev.attributes
+                    }
+                }
+
+                if (c === w - 1) {
+                    if (oldSlot.length === 2) {
+                        const prev = oldSlot
+                        oldSlot = new Slot()
+                        oldSlot.text = this.nullFillCharacter
+                        oldSlot.attributes = prev.attributes.with({
+                            colorBackgroundMode: ColorMode.Invalid
+                        })
+                    }
+
+                    if (newSlot.length === 2) {
+                        const prev = newSlot
+                        newSlot = new Slot()
+                        newSlot.text = this.nullFillCharacter
+                        newSlot.attributes = prev.attributes
+                    }
+                }
+
+                const textChanged = oldSlot.length !== newSlot.length ||
+                    oldSlot.text !== newSlot.text
+
+                const styleChange = newSlot.isNull()
+                    ? Buffer.diffBgOnly(oldSlot.attributes, newSlot.attributes)
+                    : Buffer.diffStyle(oldSlot.attributes, newSlot.attributes)
+
+                const styleSwitch = newSlot.isNull()
+                    ? Buffer.diffBgOnly(currentCursorStyle, newSlot.attributes)
+                    : Buffer.diffStyle(currentCursorStyle, newSlot.attributes)
+
+                const needSwitchStyle = styleSwitch.length > 0
+                const needOutput = newSlot.length > 0 && (textChanged || styleChange)
+
+                if (!needOutput) {
+                    if (nullFill > 0) {
+                        res += `\x1b[${nullFill}X`
+                        res += `\x1b[${nullFill}C`
+                        nullFill = 0
+                    }
+
+                    skip += newSlot.length
+                } else {
+                    if (skip > 0) {
+                        res += `\x1b[${skip}C`
+                        skip = 0
+                    }
+
+                    if (styleChange && needSwitchStyle) {
+                        if (nullFill > 0) {
+                            res += `\x1b[${nullFill}X`
+                            res += `\x1b[${nullFill}C`
+                            nullFill = 0
+                        }
+                    }
+
+                    if (needSwitchStyle) {
+                        res += styleSwitch
+                        if (newSlot.isNull()) {
+                            currentCursorStyle = currentCursorStyle.with({
+                                colorBackgroundMode: newSlot.attributes.colorBackgroundMode,
+                                colorBackground: newSlot.attributes.colorBackground
+                            })
+                        } else {
+                            currentCursorStyle = newSlot.attributes
+                        }
+                    }
+
+                    if (newSlot.isNull()) {
+                        nullFill++
+                    } else {
+                        if (nullFill > 0) {
+                            res += `\x1b[${nullFill}X`
+                            res += `\x1b[${nullFill}C`
+                            nullFill = 0
+                        }
+
+                        res += newSlot.text
+                    }
+                }
+            }
+
+            if (nullFill > 0) {
+                res += `\x1b[${nullFill}X`
+                res += `\x1b[${nullFill}C`
+                nullFill = 0
+            }
+
+            if (r !== h - 1) {
+                res += '\x1b[1B\x1b[1G'
+            }
+        }
+
+        return res
     }
 }
