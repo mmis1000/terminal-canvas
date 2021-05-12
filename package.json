@@ -1,5 +1,5 @@
 {
-  "name": "text-gui",
+  "name": "terminal-canvas",
   "version": "0.0.1",
   "description": "",
   "main": "dist/index.js",
