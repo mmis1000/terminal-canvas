@@ -21,9 +21,9 @@ async function main () {
         process.stdout.write('\r\n'.repeat(tty.rows - 1), r)
     })
 
-    const attr = new Attribute()
-    attr.setBackground(ColorMode.Palette, Color.black)
-    scrollBuf.fill(0, 0, scrollBuf.height, scrollBuf.width, ' ', attr)
+    // const attr = new Attribute()
+    // attr.setBackground(ColorMode.Palette, Color.black)
+    // scrollBuf.fill(0, 0, scrollBuf.height, scrollBuf.width, ' ', attr)
 
     let offset = 0
 
@@ -33,15 +33,13 @@ async function main () {
 
         offset = (offset + 1) % (panelWidth + gap)
 
-        const attr = new Attribute()
-        // attr.setForeground(ColorMode.Palette, Color.black)
-        // attr.setBackground(ColorMode.Palette, Color.red)
-
-
-        
         for (let i = 0; i < 2; i++) {
-            attr.setForeground(ColorMode.Palette, ~~(Math.random() * 8))
-            attr.setBackground(ColorMode.Palette, ~~(Math.random() * 8 + 8))
+            const attr = Attribute.from({
+                colorForegroundMode: ColorMode.Palette,
+                colorForeground: ~~(Math.random() * 8),
+                colorBackgroundMode: ColorMode.Palette,
+                colorBackground: ~~(Math.random() * 8 + 8)
+            })
 
             const x = ~~((panelWidth + strLength) * Math.random()) - strLength
             // const x = term.width - border - 3

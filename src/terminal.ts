@@ -3,7 +3,12 @@ import { UnicodeV11 } from "./unicode11"
 export enum ColorMode {
     Default,
     Palette,
-    Real
+    Real,
+    /** 
+     * This color can only be used as default background to force the color opcode to flush to console.
+     * Try to draw this color triggers a panic immediately
+     * */
+    Invalid
 }
 
 export enum Color {
@@ -29,58 +34,67 @@ export enum Color {
 }
 
 export class Attribute {
-    colorForegroundMode: ColorMode = ColorMode.Default
-    colorForeground: number = 0
-    colorBackgroundMode: ColorMode = ColorMode.Default
-    colorBackground: number = 0
+    
 
-    clone () {
-        const attr = new Attribute()
-        attr.colorForegroundMode = this.colorForegroundMode
-        attr.colorForeground = this.colorForeground
-        attr.colorBackgroundMode = this.colorBackgroundMode
-        attr.colorBackground = this.colorBackground
-        return attr
-    }
+    protected constructor (
+        public readonly colorForegroundMode: ColorMode = ColorMode.Default,
+        public readonly colorForeground: number = 0,
+        public readonly colorBackgroundMode: ColorMode = ColorMode.Default,
+        public readonly colorBackground: number = 0
+    ) {}
 
-    hasBackground () {
-        return this.colorBackground !== 0
-    }
+    with({
+        colorForegroundMode,
+        colorForeground,
+        colorBackgroundMode,
+        colorBackground
+    }: {
+        colorForegroundMode?: ColorMode,
+        colorForeground?: number,
+        colorBackgroundMode?: ColorMode,
+        colorBackground?: number
+    } = {}) {
+        const newAttr = new Attribute(
+            colorForegroundMode ?? this.colorForegroundMode,
+            colorForeground ?? this.colorForeground,
+            colorBackgroundMode ?? this.colorBackgroundMode,
+            colorBackground ?? this.colorBackground
+        )
 
-    applyBackground(attr: Attribute) {
-        const newAttr = new Attribute()
-        newAttr.colorForegroundMode = this.colorForegroundMode
-        newAttr.colorForeground = this.colorForeground
-        newAttr.colorBackgroundMode = attr.colorBackgroundMode
-        newAttr.colorBackground = attr.colorBackground
         return newAttr
     }
 
-    setForeground(mode: ColorMode, color: number) {
-        if (mode !== ColorMode.Default) {
-            this.colorForegroundMode = mode
-            this.colorForeground = color
-        } else {
-            this.colorForegroundMode = mode
-            this.colorForeground = 0
-        }
+    isValid() {
+        return this.colorBackgroundMode !== ColorMode.Invalid && this.colorForegroundMode !== ColorMode.Invalid
     }
 
-    setBackground(mode: ColorMode, color: number) {
-        if (mode !== ColorMode.Default) {
-            this.colorBackgroundMode = mode
-            this.colorBackground = color
-        } else {
-            this.colorBackgroundMode = mode
-            this.colorBackground = 0
-        }
+    static from({
+        colorForegroundMode = ColorMode.Default,
+        colorForeground = 0,
+        colorBackgroundMode = ColorMode.Default,
+        colorBackground = 0
+    }: {
+        colorForegroundMode?: ColorMode,
+        colorForeground?: number,
+        colorBackgroundMode?: ColorMode,
+        colorBackground?: number
+    } = {}) {
+        const attr = new Attribute(
+            colorForegroundMode,
+            colorForeground,
+            colorBackgroundMode,
+            colorBackground
+        )
+        return attr
     }
+
+    static DEFAULT = new Attribute()
 }
 
 export class Slot {
     length: number = 1
     text: string = ''
-    attributes: Attribute = new Attribute()
+    attributes: Attribute = Attribute.DEFAULT
 
     /**
      * This slot didn't exist, it is a placeholder after cjk text
@@ -100,7 +114,7 @@ export class Slot {
         const slot = new Slot()
         slot.length = this.length
         slot.text = this.text
-        slot.attributes = this.attributes.clone()
+        slot.attributes = this.attributes
     }
 }
 
@@ -109,6 +123,10 @@ export class Buffer {
     static unicode = new UnicodeV11
 
     nullFillCharacter = ''
+    defaultStyle = Attribute.from({
+        colorBackgroundMode: ColorMode.Invalid,
+        colorForegroundMode: ColorMode.Invalid
+    })
 
     static lengthOf(str: string) {
         return [...str].map(c => this.unicode.wcwidth(c.codePointAt(0)!)).reduce<number>((a, b) => a + b, 0)
@@ -142,10 +160,12 @@ export class Buffer {
             } else {
                 return `\x1b[48;5;${color}m`
             }
-        } else if (next.colorForegroundMode === ColorMode.Default) {
+        } else if (next.colorBackgroundMode === ColorMode.Default) {
             return `\x1b[49m`
-        } else {
+        } else if (next.colorBackgroundMode === ColorMode.Real) {
             return `\x1b[48;2;${(color >>> 16) & 0xFF};${(color >>> 8) & 0xFF};${color & 0xFF}m`
+        } else {
+            throw new Error('Invalid color mode')
         }
     }
 
@@ -170,8 +190,10 @@ export class Buffer {
                 }
             } else if (next.colorForegroundMode === ColorMode.Default) {
                 sgrSeq.push(39);
-            } else {
+            } else if (next.colorForegroundMode === ColorMode.Real) {
                 sgrSeq.push(38, 2, (color >>> 16) & 0xFF, (color >>> 8) & 0xFF, color & 0xFF);
+            } else {
+                throw new Error('Invalid color mode')
             }
         }
         if (bgChanged) {
@@ -184,8 +206,10 @@ export class Buffer {
                 }
             } else if (next.colorBackgroundMode === ColorMode.Default) {
                 sgrSeq.push(49);
-            } else {
+            } else if (next.colorBackgroundMode === ColorMode.Real) {
                 sgrSeq.push(48, 2, (color >>> 16) & 0xFF, (color >>> 8) & 0xFF, color & 0xFF);
+            } else {
+                throw new Error('Invalid color mode')
             }
         }
 
@@ -195,6 +219,7 @@ export class Buffer {
     write (row: number, col: number, text: string, attr?: Attribute, boundStart = -Infinity, boundEnd = Infinity): number {
         if (row >= this.height) return 0
         if (col >= this.width) return 0
+        if (attr ? !attr.isValid() : false) throw new Error('invalid color')
 
         const realBoundStart = Math.max(col, 0, boundStart)
         const maxLength = Math.min(boundEnd - col, this.width - col)
@@ -254,7 +279,7 @@ export class Buffer {
             this.grid[row][i].length = 1
             this.grid[row][i].text = ' '
             if (attr) {
-                this.grid[row][i].attributes = attr.clone()
+                this.grid[row][i].attributes = attr
             }
         }
 
@@ -294,7 +319,7 @@ export class Buffer {
         let output = ''
         output += CLEAR
 
-        let currentCursorStyle = new Attribute()
+        let currentCursorStyle = Attribute.from({})
 
         for (const [rowNum, row] of grid.entries()) {
             let nullCount = 0
@@ -318,7 +343,7 @@ export class Buffer {
                 if (styleDiff) {
                     // pad backgrounds
                     if (nullCount > 0) {
-                        if (currentCursorStyle.hasBackground()) {
+                        if (Buffer.diffBgOnly(this.defaultStyle, currentCursorStyle)) {
                             output += `\x1b[${nullCount}X`;
                         }
 
@@ -327,7 +352,10 @@ export class Buffer {
                     }
 
                     if (slot.isNull()) {
-                        currentCursorStyle = currentCursorStyle.applyBackground(slot.attributes)
+                        currentCursorStyle = currentCursorStyle.with({
+                            colorBackgroundMode: slot.attributes.colorBackgroundMode,
+                            colorBackground: slot.attributes.colorBackground
+                        })
                     } else {
                         currentCursorStyle = slot.attributes
                     }
@@ -337,7 +365,7 @@ export class Buffer {
 
                 if (!slot.isNull()) {
                     if (nullCount > 0) {
-                        if (currentCursorStyle.hasBackground()) {
+                        if (Buffer.diffBgOnly(this.defaultStyle, currentCursorStyle)) {
                             output += `\x1b[${nullCount}X`;
                         }
                         output += `\x1b[${nullCount}C`;
@@ -349,7 +377,7 @@ export class Buffer {
                 }
             }
 
-            if (nullCount > 0 && currentCursorStyle.hasBackground()) {
+            if (nullCount > 0 && Buffer.diffBgOnly(this.defaultStyle, currentCursorStyle)) {
                 output += `\x1b[${nullCount}X`;
             }
 
@@ -370,13 +398,15 @@ export class Buffer {
         }
 
         if (cell.length === 0) {
-            return this.grid[row][col - 1].attributes.clone()
+            return this.grid[row][col - 1].attributes
         }
 
-        return cell.attributes.clone()
+        return cell.attributes
     }
 
     fill(dy: number, dx: number, h: number, w: number, text: string, attr?: Attribute) {
+        if (attr ? !attr.isValid() : false) throw new Error('invalid color')
+
         for (let r = 0; r < h; r++) {
             const row = this.grid[r + dy]
             if (row === undefined) continue
@@ -399,7 +429,7 @@ export class Buffer {
                 cell.text = this.nullFillCharacter
 
                 if (attr !== undefined) {
-                    cell.attributes = attr.clone()
+                    cell.attributes = attr
                 }
             }
         }
