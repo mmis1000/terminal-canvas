@@ -132,7 +132,7 @@ export class Slot {
     }
 }
 
-export class Buffer {
+export class TerminalBuffer {
     grid: Slot[][]
     static unicode = new UnicodeV11
 
@@ -230,6 +230,16 @@ export class Buffer {
         return `\x1b[${sgrSeq.join(';')}m`
     }
 
+    /**
+     * Write a text to the screen
+     * @param row The row
+     * @param col The cow
+     * @param text Text you want to write
+     * @param attr Text Style, tries to reuse original style at such pos if not specified
+     * @param boundStart Cap the text on head at given bound
+     * @param boundEnd Cap the text on end at given bound
+     * @returns The off set of terminal cursor from the `row`
+     */
     write(row: number, col: number, text: string, attr?: Attribute, boundStart = -Infinity, boundEnd = Infinity): number {
         if (row >= this.height) return 0
         if (col >= this.width) return 0
@@ -246,7 +256,7 @@ export class Buffer {
         let endCapped = false
 
         for (let char of chars) {
-            const wc = Buffer.unicode.wcwidth(char.codePointAt(0)!)
+            const wc = TerminalBuffer.unicode.wcwidth(char.codePointAt(0)!)
 
             if (wc + offset > maxLength) {
                 if (1 + offset <= maxLength) endCapped = true
@@ -325,6 +335,10 @@ export class Buffer {
         return actualLength
     }
 
+    /**
+     * Serialize this buffer into a string for print to console
+     * @returns The serialized text buffer
+     */
     serialize() {
         const CLEAR = `\x1b[0m`
 
@@ -338,7 +352,7 @@ export class Buffer {
         for (const [rowNum, row] of grid.entries()) {
             let nullCount = 0
             for (const [colNum, slot] of row.entries()) {
-                if (slot.text && slot.length !== Buffer.unicode.wcwidth(slot.text.codePointAt(0)!)) {
+                if (slot.text && slot.length !== TerminalBuffer.unicode.wcwidth(slot.text.codePointAt(0)!)) {
                     debugger
                 }
 
@@ -351,13 +365,13 @@ export class Buffer {
                 }
 
                 const styleDiff = slot.isNull()
-                    ? Buffer.diffBgOnly(currentCursorStyle, slot.attributes)
-                    : Buffer.diffStyle(currentCursorStyle, slot.attributes)
+                    ? TerminalBuffer.diffBgOnly(currentCursorStyle, slot.attributes)
+                    : TerminalBuffer.diffStyle(currentCursorStyle, slot.attributes)
 
                 if (styleDiff) {
                     // pad backgrounds
                     if (nullCount > 0) {
-                        if (Buffer.diffBgOnly(this.defaultStyle, currentCursorStyle)) {
+                        if (TerminalBuffer.diffBgOnly(this.defaultStyle, currentCursorStyle)) {
                             output += `\x1b[${nullCount}X`;
                         }
 
@@ -379,7 +393,7 @@ export class Buffer {
 
                 if (!slot.isNull()) {
                     if (nullCount > 0) {
-                        if (Buffer.diffBgOnly(this.defaultStyle, currentCursorStyle)) {
+                        if (TerminalBuffer.diffBgOnly(this.defaultStyle, currentCursorStyle)) {
                             output += `\x1b[${nullCount}X`;
                         }
                         output += `\x1b[${nullCount}C`;
@@ -391,7 +405,7 @@ export class Buffer {
                 }
             }
 
-            if (nullCount > 0 && Buffer.diffBgOnly(this.defaultStyle, currentCursorStyle)) {
+            if (nullCount > 0 && TerminalBuffer.diffBgOnly(this.defaultStyle, currentCursorStyle)) {
                 output += `\x1b[${nullCount}X`;
             }
 
@@ -405,7 +419,7 @@ export class Buffer {
         return output
     }
 
-    styleAt(row: number, col: number) {
+    private styleAt(row: number, col: number) {
         const cell = this.grid[row]?.[col]
         if (cell === undefined) {
             return null
@@ -418,7 +432,16 @@ export class Buffer {
         return cell.attributes
     }
 
-    fill(dy: number, dx: number, h: number, w: number, text: string, attr?: Attribute) {
+    /**
+     * Fill the screen area with given text and style
+     * @param dy row
+     * @param dx col
+     * @param h height
+     * @param w width
+     * @param text text to fill
+     * @param attr style, reuse original if not specified
+     */
+    fill (dy: number, dx: number, h: number, w: number, text: string, attr?: Attribute) {
         if (attr ? !attr.isValid() : false) throw new Error('invalid color')
 
         for (let r = 0; r < h; r++) {
@@ -460,7 +483,17 @@ export class Buffer {
         }
     }
 
-    draw(buf: Buffer, sy: number, sx: number, dy: number, dx: number, h: number, w: number) {
+    /**
+     * Draw another (or current) buffer over current buffer, throws if origin and target overlaps
+     * @param buf Source buffer
+     * @param sy source row
+     * @param sx source col
+     * @param dy dist row
+     * @param dx dist cow
+     * @param h height
+     * @param w width
+     */
+    draw(buf: TerminalBuffer, sy: number, sx: number, dy: number, dx: number, h: number, w: number) {
         if (buf === this &&
             sy + h > dy && dy + h > sy &&
             sx + w > dx && dx + w > sx
@@ -524,7 +557,18 @@ export class Buffer {
         }
     }
 
-    diff(toBuf: Buffer, fromY: number, fromX: number, toY: number, toX: number, h: number, w: number): string {
+    /**
+     * Generate a diff that is used to turn targeted screen status into this buffer's screen status
+     * @param toBuf The initial state
+     * @param fromY row in current buffer
+     * @param fromX col in current buffer
+     * @param toY row in initial state
+     * @param toX col in initial state
+     * @param h height
+     * @param w width
+     * @returns Diff
+     */
+    diff(toBuf: TerminalBuffer, fromY: number, fromX: number, toY: number, toX: number, h: number, w: number): string {
         let res = ''
 
         let currentCursorStyle = Attribute.from({
@@ -581,12 +625,12 @@ export class Buffer {
                     oldSlot.text !== newSlot.text
 
                 const styleChange = newSlot.isNull()
-                    ? Buffer.diffBgOnly(oldSlot.attributes, newSlot.attributes)
-                    : Buffer.diffStyle(oldSlot.attributes, newSlot.attributes)
+                    ? TerminalBuffer.diffBgOnly(oldSlot.attributes, newSlot.attributes)
+                    : TerminalBuffer.diffStyle(oldSlot.attributes, newSlot.attributes)
 
                 const styleSwitch = newSlot.isNull()
-                    ? Buffer.diffBgOnly(currentCursorStyle, newSlot.attributes)
-                    : Buffer.diffStyle(currentCursorStyle, newSlot.attributes)
+                    ? TerminalBuffer.diffBgOnly(currentCursorStyle, newSlot.attributes)
+                    : TerminalBuffer.diffStyle(currentCursorStyle, newSlot.attributes)
 
                 const needSwitchStyle = styleSwitch.length > 0
                 const needOutput = newSlot.length > 0 && (textChanged || styleChange)
