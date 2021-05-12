@@ -21,10 +21,6 @@ async function main () {
         process.stdout.write('\r\n'.repeat(tty.rows - 1), r)
     })
 
-    // const attr = new Attribute()
-    // attr.setBackground(ColorMode.Palette, Color.black)
-    // scrollBuf.fill(0, 0, scrollBuf.height, scrollBuf.width, ' ', attr)
-
     let offset = 0
     let offset1 = 0
 
@@ -48,8 +44,6 @@ async function main () {
                 })
 
                 const x = ~~((panelWidth + strLength) * Math.random()) - strLength
-                // const x = -5
-                // const x = term.width - border - 3
 
                 scrollBuf.write(
                     border + ~~(Math.random() * (scrollBuf.height - border * 2)), x,
@@ -92,20 +86,6 @@ async function main () {
             const item = lastRecords.shift()!
             sum -= item
         }
-
-        // const attr1 = new Attribute()
-        // attr1.setForeground(ColorMode.Palette, Color.black)
-        // attr1.setBackground(ColorMode.Palette, Color.blueBright)
-
-        // term.draw(term, border, border, border, border + 32, h, 32)
-        // term.fill(border, border + 64, h, 32, 'AAB中文', attr1)
-        // term.draw(term, border, border, border, border + 96, h, 32)
-
-        // const res = term.serialize()
-
-        // await new Promise(r => {
-        //     process.stdout.write(`\x1b[1;1H` + res + '\x1b[0m', r)
-        // })
 
         index++
         await new Promise(r => setTimeout(r, 10))
