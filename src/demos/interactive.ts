@@ -91,6 +91,7 @@ async function main () {
     function resizeHandler () {
         printer.resize(tty.columns, tty.rows)
         printer.updateScreenFull()
+        paint()
     }
 
     tty.on('resize', resizeHandler)
