@@ -153,12 +153,40 @@ export class TerminalBuffer {
     }
 
     resize(width: number, height: number) {
+        if (height > this.height) {
+            for (let i = 0; i < height - this.height; i++) {
+                this.grid.push([])
+            }
+        }
+
+        if (height < this.height) {
+            this.grid = this.grid.slice(0, height)
+        }
+
+        for (let [index, row] of this.grid.entries()) {
+            if (row.length < width) {
+                const addition = width - row.length
+
+                for (let i = 0; i < addition; i++) {
+                    row.push(new Slot())
+                }
+            }
+
+            if (row.length > width) {
+                this.grid[index] = row.slice(0, width)
+            }
+        }
+
+        for (let row of this.grid) {
+            const last = row[row.length -1]
+            if (last.length === 2) {
+                last.length = 1
+                last.text = this.nullFillCharacter
+            }
+        }
+
         this.width = width
         this.height = height
-
-        this.grid = new Array(height).fill(this.nullFillCharacter).map(
-            () => new Array(width).fill(this.nullFillCharacter).map(() => new Slot())
-        )
     }
 
     static diffBgOnly(prev: Attribute, next: Attribute): string {
@@ -725,6 +753,15 @@ export class Printer extends TerminalBuffer {
         })
     }
 
+    async updateScreenFull() {
+        this.currentScreen.draw(this, 0, 0, 0, 0, this.height, this.width)
+        const res = this.currentScreen.serialize()
+
+        await new Promise(r => {
+            process.stdout.write('\x1b[1;1H\x1b[0m' + res, r)
+        })
+    }
+
     async updateScreen() {
         const diff = this.diff(this.currentScreen, 0, 0, 0, 0, this.height, this.width)
         this.currentScreen.draw(this, 0, 0, 0, 0, this.height, this.width)
@@ -732,6 +769,5 @@ export class Printer extends TerminalBuffer {
         await new Promise(r => {
             process.stdout.write(`\x1b[1;1H\x1b[0m${ diff }\x1b[0m`, r)
         })
-
     }
 }

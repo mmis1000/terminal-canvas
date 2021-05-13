@@ -27,10 +27,9 @@ process.stdin.on('data', (key: string) => {
 
 const scrollBuf = new TerminalBuffer(tty.columns + panelWidth + gap, tty.rows)
 const subBuf = new TerminalBuffer(tty.columns, 1)
+const printer = new Printer(tty.columns, tty.rows)
 
 async function main () {
-    const printer = new Printer(tty.columns, tty.rows)
-
     await printer.initScreen()
 
     let offset = 0
@@ -42,7 +41,21 @@ async function main () {
     const str = '中文測試, Test中文測試'
     const strLength = TerminalBuffer.lengthOf(str)
 
+    let prevCol = tty.columns
+    let prevRow = tty.rows
+
     while (!tty.writableEnded) {
+        const resized = prevCol !== tty.columns || prevRow !== tty.rows
+
+        if (resized) {
+            scrollBuf.resize(tty.columns + panelWidth + gap, tty.rows)
+            subBuf.resize(tty.columns, 1)
+            printer.resize(tty.columns, tty.rows)
+
+            prevCol = tty.columns
+            prevRow = tty.rows
+        }
+
         offset = (offset + 1) % (panelWidth + gap)
 
         const start = Date.now()
@@ -86,7 +99,11 @@ async function main () {
         printer.draw(scrollBuf, 0, offset, 0, 0, scrollBuf.height, scrollBuf.width)
         printer.draw(subBuf, 0, 0, printer.height - 1, 0, subBuf.height, subBuf.width)
 
-        await printer.updateScreen()
+        if (!resized) {
+            await printer.updateScreen()
+        } else {
+            await printer.updateScreenFull()
+        }
 
         const current = Date.now() - start
 
