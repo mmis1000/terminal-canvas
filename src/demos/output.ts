@@ -1,4 +1,4 @@
-import { Attribute, ColorMode, TerminalBuffer, Printer } from "./terminal";
+import { Attribute, ColorMode, TerminalBuffer, Printer } from "../terminal";
 
 if (!process.stdout.isTTY) {
     throw new Error('Not tty')
@@ -33,6 +33,7 @@ async function main () {
     await printer.initScreen()
 
     let offset = 0
+    let y = 0
 
     const MAX_RECORD_SIZE = 20
     let lastRecords = [0]
@@ -60,6 +61,8 @@ async function main () {
 
         const start = Date.now()
         if (offset === 0) {
+            y = (y + 1) % (scrollBuf.height - border * 2)
+
             for (let i = 0; i < 2; i++) {
                 const attr = Attribute.from({
                     colorForegroundMode: ColorMode.Palette,
@@ -71,7 +74,7 @@ async function main () {
                 const x = ~~((panelWidth + strLength) * Math.random()) - strLength
 
                 scrollBuf.write(
-                    border + ~~(Math.random() * (scrollBuf.height - border * 2)), x,
+                    y + border, x,
                     str, attr,
                     0, panelWidth
                 )

@@ -269,7 +269,7 @@ export class TerminalBuffer {
      * @returns The off set of terminal cursor from the `row`
      */
     write(row: number, col: number, text: string, attr?: Attribute, boundStart = -Infinity, boundEnd = Infinity): number {
-        if (row >= this.height) return 0
+        if (row < 0 || row >= this.height) return 0
         if (col >= this.width) return 0
         if (attr ? !attr.isValid() : false) throw new Error('invalid color')
 
@@ -302,7 +302,7 @@ export class TerminalBuffer {
 
         const actualLength = endCapped ? offset + 1 : offset
 
-        if (col + actualLength <= 0) return 0
+        if (col + actualLength <= 0) return actualLength
 
         // double width head fix
         if (
@@ -604,8 +604,7 @@ export class TerminalBuffer {
         let res = ''
 
         let currentCursorStyle = Attribute.from({
-            colorBackgroundMode: ColorMode.Invalid,
-            colorForegroundMode: ColorMode.Invalid
+            colorBackgroundMode: ColorMode.Invalid
         })
 
         let defaultSlot = new Slot()
@@ -656,7 +655,7 @@ export class TerminalBuffer {
                 const textChanged = oldSlot.length !== newSlot.length ||
                     oldSlot.text !== newSlot.text
 
-                const styleChange = newSlot.isNull()
+                const styleChange = newSlot.isNull() && oldSlot.isNull()
                     ? TerminalBuffer.diffBgOnly(oldSlot.attributes, newSlot.attributes)
                     : TerminalBuffer.diffStyle(oldSlot.attributes, newSlot.attributes)
 
@@ -681,7 +680,7 @@ export class TerminalBuffer {
                         skip = 0
                     }
 
-                    if (styleChange && needSwitchStyle) {
+                    if (styleChange || needSwitchStyle) {
                         if (nullFill > 0) {
                             res += `\x1b[${nullFill}X`
                             res += `\x1b[${nullFill}C`
