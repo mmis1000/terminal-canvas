@@ -137,11 +137,6 @@ async function main () {
         printer.fill(0, 0, 1, printer.width, ' ', titleColor)
         printer.write(0, ~~(printer.width / 2 - titleWidth / 2), title, titleColor)
 
-        const selectColor = Attribute.from({
-            colorForegroundMode: ColorMode.Palette,
-            colorForeground: Color.greenBright
-        })
-
         for (let i = 0; i < items.length; i++) {
             const item = items[i]
             printer.fill(
