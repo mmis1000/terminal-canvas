@@ -432,6 +432,10 @@ export class TerminalBuffer {
         return cell.attributes
     }
 
+    clear (attr: Attribute = Attribute.DEFAULT) {
+        this.fill(0, 0, this.height, this.width, '', attr)
+    }
+
     /**
      * Fill the screen area with given text and style
      * @param dy row
@@ -695,5 +699,39 @@ export class TerminalBuffer {
         }
 
         return res
+    }
+}
+
+export class Printer extends TerminalBuffer {
+    private currentScreen: TerminalBuffer
+
+    constructor(width: number, height: number) {
+        super(width, height)
+
+        this.currentScreen = new TerminalBuffer(width, height)
+    }
+
+    resize(width: number, height: number) {
+        super.resize(width, height)
+        this.currentScreen.resize(width, height)
+    }
+
+    async initScreen() {
+        this.currentScreen.draw(this, 0, 0, 0, 0, this.height, this.width)
+        const res = this.currentScreen.serialize()
+
+        await new Promise(r => {
+            process.stdout.write('\r\n'.repeat(this.height - 1) + '\x1b[1;1H\x1b[0m' + res, r)
+        })
+    }
+
+    async updateScreen() {
+        const diff = this.diff(this.currentScreen, 0, 0, 0, 0, this.height, this.width)
+        this.currentScreen.draw(this, 0, 0, 0, 0, this.height, this.width)
+
+        await new Promise(r => {
+            process.stdout.write(`\x1b[1;1H\x1b[0m${ diff }\x1b[0m`, r)
+        })
+
     }
 }
