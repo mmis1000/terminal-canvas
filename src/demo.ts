@@ -1,4 +1,4 @@
-import { Attribute, ColorMode, TerminalBuffer, Color } from "./terminal";
+import { Attribute, ColorMode, TerminalBuffer, Printer } from "./terminal";
 
 if (!process.stdout.isTTY) {
     throw new Error('Not tty')
@@ -8,32 +8,44 @@ const border = 4
 const panelWidth = 8
 const gap = 8
 
+let lastInput = ''
+
 const tty = process.stdout as import('tty').WriteStream
+process.stdin.setRawMode(true)
+process.stdin.setEncoding('utf-8')
+process.stdin.on('data', (key: string) => {
+    const CTRL_C = '\x03'
+    lastInput = ''
+    for (let k of key) {
+        if (k === CTRL_C) {
+            process.emit('SIGINT', 'SIGINT')
+        } else {
+            lastInput += k
+        }
+    }
+})
 
-const term = new TerminalBuffer(tty.columns, tty.rows)
 const scrollBuf = new TerminalBuffer(tty.columns + panelWidth + gap, tty.rows)
-
+const subBuf = new TerminalBuffer(tty.columns, 1)
 
 async function main () {
-    let index = 0
+    const printer = new Printer(tty.columns, tty.rows)
 
-    await new Promise(r => {
-        process.stdout.write('\r\n'.repeat(tty.rows - 1), r)
-    })
+    await printer.initScreen()
 
     let offset = 0
-    let offset1 = 0
 
     const MAX_RECORD_SIZE = 20
     let lastRecords = [0]
     let sum = 0
 
-    while (true) {
-        const str = '中文測試, Test中文測試'
-        const strLength = TerminalBuffer.lengthOf(str)
+    const str = '中文測試, Test中文測試'
+    const strLength = TerminalBuffer.lengthOf(str)
 
+    while (!tty.writableEnded) {
         offset = (offset + 1) % (panelWidth + gap)
 
+        const start = Date.now()
         if (offset === 0) {
             for (let i = 0; i < 2; i++) {
                 const attr = Attribute.from({
@@ -63,20 +75,19 @@ async function main () {
             )
         }
 
-        scrollBuf.fill(scrollBuf.height - 1, 0, 1, scrollBuf.width, '', Attribute.DEFAULT)
-        scrollBuf.write(
-            scrollBuf.height - 1, offset,
-            `Last ${lastRecords.length} draw average: ${Math.floor(sum / lastRecords.length).toString().padStart(4, ' ')} ms, Surface: ${term.width} x ${term.height}`
+        subBuf.clear()
+        subBuf.write(
+            0, 0,
+            `Last ${lastRecords.length.toString().padStart(2, ' ')} draw average: ${Math.floor(sum / lastRecords.length).toString().padStart(4, ' ')} ms, `
+            + `Surface: ${printer.width} x ${printer.height}, `
+            + `Last input: ${lastInput.replace(/[\x00-\x1f\x20\x7f]/g, c => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`)}`
         )
 
-        const diff = scrollBuf.diff(term, 0, offset, 0, 0, term.height, term.width)
-        
-        const start = Date.now()
-        await new Promise(r => {
-            process.stdout.write(`\x1b[1;1H\x1b[0m` + diff + '\x1b[0m', r)
-        })
+        printer.draw(scrollBuf, 0, offset, 0, 0, scrollBuf.height, scrollBuf.width)
+        printer.draw(subBuf, 0, 0, printer.height - 1, 0, subBuf.height, subBuf.width)
 
-        term.draw(scrollBuf, 0, offset, 0, 0, term.height, term.width)
+        await printer.updateScreen()
+
         const current = Date.now() - start
 
         lastRecords.push(current)
@@ -87,9 +98,21 @@ async function main () {
             sum -= item
         }
 
-        index++
-        await new Promise(r => setTimeout(r, 10))
+        await new Promise(r => setTimeout(r, 50))
     }
 }
 
+process.stdout.on('finish', () => {
+    process.exit(0)
+})
+
+process.on('SIGINT', () => {
+    process.stdout.write('\r\n')
+    process.stdout.end()
+})
+
+process.on('SIGTERM', () => {
+    process.stdout.write('\r\n')
+    process.stdout.end()
+})
 main()
