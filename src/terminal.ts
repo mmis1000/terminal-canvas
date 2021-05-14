@@ -721,7 +721,7 @@ export class TerminalBuffer {
             }
 
             if (r !== h - 1) {
-                res += '\x1b[1B\x1b[1G'
+                res += '\r\n'
             }
         }
 
