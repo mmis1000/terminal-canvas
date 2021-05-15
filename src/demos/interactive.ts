@@ -96,7 +96,7 @@ async function main () {
 
     tty.on('resize', resizeHandler)
 
-    const title = 'Title'
+    const title = 'Interactive 1'
     const titleWidth = TerminalBuffer.lengthOf(title)
 
     const item = (t: string) => ({
