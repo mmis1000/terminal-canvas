@@ -33,6 +33,17 @@ export enum Color {
     grey = blackBright,
 }
 
+export enum CompositeMode {
+    /** (Default) override the original slot even if content is null or style are default */
+    OverrideBoth,
+    /** override the original slot even if content is null */
+    OverrideContent,
+    /** override the original slot style even if style are default */
+    OverrideStyle,
+    /** keep style and content of original slot unless specified in source */
+    OverrideNone
+}
+
 export class Attribute {
 
     public readonly colorForeground: number = 0
@@ -329,7 +340,7 @@ export class TerminalBuffer {
         // zoning
         for (let i = realBoundStart; i < col + actualLength; i++) {
             this.grid[row][i].length = 1
-            this.grid[row][i].text = ' '
+            this.grid[row][i].text = this.nullFillCharacter
             if (attr) {
                 this.grid[row][i].attributes = attr
             }
