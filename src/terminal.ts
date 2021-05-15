@@ -34,14 +34,14 @@ export enum Color {
 }
 
 export enum CompositeMode {
-    /** (Default) override the original slot even if content is null or style are default */
-    OverrideBoth,
-    /** override the original slot even if content is null */
-    OverrideContent,
-    /** override the original slot style even if style are default */
-    OverrideStyle,
     /** keep style and content of original slot unless specified in source */
-    OverrideNone
+    OverrideNone = 0,
+    /** override the original slot even if content is null */
+    OverrideContent = 1 << 0,
+    /** override the original slot style even if style are default */
+    OverrideStyle = 1 << 1,
+    /** (Default) override the original slot even if content is null or style are default */
+    OverrideBoth = OverrideContent | OverrideStyle,
 }
 
 export class Attribute {
@@ -93,6 +93,10 @@ export class Attribute {
         return this.colorBackgroundMode !== ColorMode.Invalid && this.colorForegroundMode !== ColorMode.Invalid
     }
 
+    idDefault() {
+        return this.colorBackgroundMode === ColorMode.Default && this.colorForegroundMode === ColorMode.Default
+    }
+
     static from({
         colorForegroundMode = ColorMode.Default,
         colorForeground = 0,
@@ -111,6 +115,20 @@ export class Attribute {
             colorBackground
         )
         return attr
+    }
+
+    mixWith(attr: Attribute) {
+        const bgm = attr.colorBackgroundMode === ColorMode.Default ? this.colorBackgroundMode : attr.colorBackgroundMode
+        const bg = attr.colorBackgroundMode === ColorMode.Default ? this.colorBackground: attr.colorBackground
+        const fgm = attr.colorForegroundMode === ColorMode.Default ? this.colorForegroundMode : attr.colorForegroundMode
+        const fg = attr.colorForegroundMode === ColorMode.Default ? this.colorForeground: attr.colorForeground
+
+        return new Attribute(
+            fgm,
+            fg,
+            bgm,
+            bg
+        )
     }
 
     static DEFAULT = new Attribute()
@@ -140,6 +158,8 @@ export class Slot {
         slot.length = this.length
         slot.text = this.text
         slot.attributes = this.attributes
+
+        return slot
     }
 }
 
@@ -280,6 +300,7 @@ export class TerminalBuffer {
      * @returns The off set of terminal cursor from the `row`
      */
     write(row: number, col: number, text: string, attr?: Attribute, boundStart = -Infinity, boundEnd = Infinity): number {
+        if (text === '') return 0
         if (row < 0 || row >= this.height) return 0
         if (col >= this.width) return 0
         if (attr ? !attr.isValid() : false) throw new Error('invalid color')
@@ -366,7 +387,7 @@ export class TerminalBuffer {
             if (item[1] === 2) {
                 this.grid[row][item[0]].text = item[2]
                 this.grid[row][item[0]].length = 2
-                this.grid[row][item[0] + 1].text = this.nullFillCharacter
+                this.grid[row][item[0] + 1].text = ''
                 this.grid[row][item[0] + 1].length = 0
             }
         }
@@ -483,8 +504,17 @@ export class TerminalBuffer {
      * @param w width
      * @param text text to fill
      * @param attr style, reuse original if not specified
+     * @param mode control how the result is handled when there is no text or there is no color
      */
-    fill (dy: number, dx: number, h: number, w: number, text: string, attr?: Attribute) {
+    fill (
+        dy: number,
+        dx: number,
+        h: number,
+        w: number,
+        text: string,
+        attr?: Attribute,
+        mode = CompositeMode.OverrideBoth
+    ) {
         if (attr ? !attr.isValid() : false) throw new Error('invalid color')
 
         for (let r = 0; r < h; r++) {
@@ -495,32 +525,60 @@ export class TerminalBuffer {
                 const cell = row[c + dx]
                 if (cell === undefined) continue
 
-                if (cell.length === 0) {
-                    row[c + dx - 1].length = 1
-                    row[c + dx - 1].text = this.nullFillCharacter
+                if (c === 0 && cell.length === 0) {
+                    if (mode & CompositeMode.OverrideContent) {
+                        row[c + dx - 1].length = 1
+                        row[c + dx - 1].text = this.nullFillCharacter
+                    } else {
+                        // we shouldn't
+                        continue
+                    }
+                } else if (c === w - 1 && cell.length === 2) {
+                    if (mode & CompositeMode.OverrideContent) {
+                        row[c + dx + 1].length = 1
+                        row[c + dx + 1].text = this.nullFillCharacter
+                    } else {
+                        // we shouldn't
+                        continue
+                    }
+                } else {
+                    // nos special handle
                 }
+                // if (cell.length === 0) {
+                //     row[c + dx - 1].length = 1
+                //     row[c + dx - 1].text = this.nullFillCharacter
+                // }
 
-                if (cell.length === 2) {
-                    row[c + dx + 1].length = 1
-                    row[c + dx + 1].text = this.nullFillCharacter
+                // if (cell.length === 2) {
+                //     row[c + dx + 1].length = 1
+                //     row[c + dx + 1].text = this.nullFillCharacter
+                // }
+
+                if (mode & CompositeMode.OverrideContent) {
+                    cell.length = 1
+                    cell.text = this.nullFillCharacter
                 }
-
-                cell.length = 1
-                cell.text = this.nullFillCharacter
 
                 if (attr !== undefined) {
-                    cell.attributes = attr
+                    if (mode & CompositeMode.OverrideStyle) {
+                        cell.attributes = attr
+                    } else {
+                        cell.attributes = cell.attributes.mixWith(attr)
+                    }
                 }
             }
         }
 
-        for (let r = dy; r < dy + h; r++) {
-            let pos = dx
-            while (pos < dx + w) {
-                const length = this.write(r, pos, text, attr, dx, dx + w)
-                pos = pos + length
-                if (length <= 0) {
-                    break
+        if (text !== '') {
+            const style = mode | CompositeMode.OverrideContent ? attr : undefined
+            for (let r = dy; r < dy + h; r++) {
+                let pos = dx
+                while (pos < dx + w) {
+                    const length = this.write(r, pos, text, style, dx, dx + w)
+                    pos = pos + length
+                    if (length <= 0) {
+                        break
+                    }
                 }
             }
         }
@@ -593,7 +651,7 @@ export class TerminalBuffer {
                         this.grid[r + dy][c + dx].length = 2
                         this.grid[r + dy][c + dx].text = from.text
                         this.grid[r + dy][c + dx + 1].length = 0
-                        this.grid[r + dy][c + dx + 1].text = this.nullFillCharacter
+                        this.grid[r + dy][c + dx + 1].text = ''
                     }
                 }
             }

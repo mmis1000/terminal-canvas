@@ -1,5 +1,5 @@
 import EventEmitter = require("events");
-import { Attribute, ColorMode, TerminalBuffer, Printer, Color } from "../terminal";
+import { Attribute, ColorMode, TerminalBuffer, Printer, Color, CompositeMode } from "../terminal";
 
 if (!process.stdout.isTTY) {
     throw new Error('Not tty')
@@ -29,7 +29,7 @@ process.on('SIGTERM', () => {
 let part = ''
 let unfinished = false
 
-function checkUnfinished () {
+function checkUnfinished() {
     if (part.match(/^\x1b\[(?:\d+(?:;|\d+)+|\d+|)[^\d]$/)) {
         keyboard.emit('key', part)
         part = ''
@@ -65,28 +65,48 @@ process.stdin.on('data', (key: string) => {
 
 const printer = new Printer(tty.columns, tty.rows)
 
-async function main () {
-    function handler (key: string) {
+async function main() {
+    let message = ''
+    function handler(key: string) {
         if (key === '\x09') {
             index = (index + 1) % items.length
+            message = `Selection changed (${index})`
         }
         if (key === '\x1b[Z') {
             index = (index - 1 + items.length) % items.length
+            message = `Selection changed (${index})`
         }
         if (key === '\x1b[A') {
             items[index].y -= 1
+            message = `Up (${items[index].y})`
         }
         if (key === '\x1b[B') {
             items[index].y += 1
+            message = `Down (${items[index].y})`
         }
         if (key === '\x1b[D') {
             items[index].x -= 1
+            message = `Left (${items[index].x})`
         }
         if (key === '\x1b[C') {
             items[index].x += 1
+            message = `Right (${items[index].x})`
         }
         if (key === 'c' || key === 'C') {
             items[index].color = (items[index].color + 1) % 16
+            message = `Color (${Color[items[index].color]})`
+        }
+        if (key === 'v' || key === 'V') {
+            items[index].contentVisible = !items[index].contentVisible
+            message = `Content Visible (${items[index].contentVisible})`
+        }
+        if (key === 'b' || key === 'B') {
+            items[index].compositeMode = (items[index].compositeMode + 1) % 4
+            message = `Composite Mode (${CompositeMode[items[index].compositeMode]})`
+        }
+        if (key === 'r' || key === 'R') {
+            printer.updateScreenFull()
+            message = `Force refreshed`
         }
 
         paint()
@@ -94,7 +114,7 @@ async function main () {
 
     keyboard.on('key', handler)
 
-    function resizeHandler () {
+    function resizeHandler() {
         printer.resize(tty.columns, tty.rows)
         printer.updateScreenFull()
         paint()
@@ -106,11 +126,14 @@ async function main () {
     const titleWidth = TerminalBuffer.lengthOf(title)
 
     const item = (t: string, color: number, x: number, y: number) => ({
-        checked: false,
         x,
         y,
         text: t,
-        color
+
+        contentVisible: true,
+        color,
+
+        compositeMode: CompositeMode.OverrideBoth
     })
 
     const items = [
@@ -126,7 +149,7 @@ async function main () {
 
     let index = 0
 
-    async function paint () {
+    async function paint() {
         printer.clear()
         const titleColor = Attribute.from({
             colorBackgroundMode: ColorMode.Palette,
@@ -145,29 +168,53 @@ async function main () {
                 item.x,
                 6,
                 12,
-                item.text,
+                item.contentVisible ? item.text : '',
                 Attribute.from({
                     colorBackgroundMode: ColorMode.Palette,
                     colorBackground: item.color,
-                    colorForegroundMode: ColorMode.Palette,
+                    colorForegroundMode: item.contentVisible ? ColorMode.Palette : ColorMode.Default,
                     colorForeground: i === index ? Color.blueBright : Color.white
-                })
+                }),
+                item.compositeMode
             )
         }
+
+        printer.write(
+            printer.height - 3, 0,
+            'Last message: ' + message,
+            Attribute.DEFAULT,
+        )
+
         let offset = 0
         offset += printer.write(
-            printer.height - 1, offset,
-            '[Shift+Tab] switch prev ',
+            printer.height - 2, offset,
+            '[Shift+Tab] switch prev  ',
             Attribute.DEFAULT,
         )
         offset += printer.write(
-            printer.height - 1, offset,
-            '[Tab] switch next ',
+            printer.height - 2, offset,
+            '[Tab] switch next  ',
             Attribute.DEFAULT,
         )
         offset += printer.write(
+            printer.height - 2, offset,
+            '[C] change color  ',
+            Attribute.DEFAULT,
+        )
+        offset += printer.write(
+            printer.height - 2, offset,
+            '[V] toggle content  ',
+            Attribute.DEFAULT,
+        )
+        offset += printer.write(
+            printer.height - 2, offset,
+            '[R] force refresh  ',
+            Attribute.DEFAULT,
+        )
+        offset = 0
+        offset += printer.write(
             printer.height - 1, offset,
-            '[C] change color ',
+            '[B] toggle composite mode  ',
             Attribute.DEFAULT,
         )
         offset += printer.write(
@@ -180,7 +227,6 @@ async function main () {
             '[Ctrl+C] Exit  ',
             Attribute.DEFAULT,
         )
-
         await printer.updateScreen()
     }
 
