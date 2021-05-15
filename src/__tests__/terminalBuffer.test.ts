@@ -1,5 +1,30 @@
 import { Attribute, Color, ColorMode, TerminalBuffer } from '../'
 
+test('resize up', () => {
+    const c1 = Attribute.from({
+        colorBackgroundMode: ColorMode.Palette,
+        colorBackground: Color.blue
+    })
+
+    const buf1 = new TerminalBuffer(1, 1)
+    buf1.resize(2, 2)
+
+    expect(buf1.grid.length).toBe(2)
+    expect(buf1.grid[0].length).toBe(2)
+})
+test('resize down', () => {
+    const c1 = Attribute.from({
+        colorBackgroundMode: ColorMode.Palette,
+        colorBackground: Color.blue
+    })
+
+    const buf1 = new TerminalBuffer(2, 2)
+    buf1.resize(1, 1)
+
+    expect(buf1.grid.length).toBe(1)
+    expect(buf1.grid[0].length).toBe(1)
+})
+
 test('clear', () => {
     const c1 = Attribute.from({
         colorBackgroundMode: ColorMode.Palette,
