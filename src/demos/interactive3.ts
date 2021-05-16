@@ -192,7 +192,7 @@ async function main() {
         let offset = 0
         offset += printer.write(
             printer.height - 2, offset,
-            `[Z] pen down / pen up (${down ? 'down' : 'up'})`,
+            `[Z] pen down / pen up (${down ? 'down' : 'up'})  `,
             Attribute.DEFAULT,
         )
         offset += printer.write(
